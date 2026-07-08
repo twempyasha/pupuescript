@@ -1,15 +1,4 @@
-task.spawn(function()
-    local StarterGui = game:GetService("StarterGui")
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = "PupueScript",
-            Text = "Скрипт успешно запущен!",
-            Icon = "rbxassetid://11954318818",
-            Duration = 5
-        })
-    end)
-end)
-
+local Players = game:GetService("Players")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
