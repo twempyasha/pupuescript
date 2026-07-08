@@ -1,5 +1,4 @@
 local Players = game:GetService("Players")
-local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
@@ -845,7 +844,4 @@ CreateSlider(PlayerCol, "TrailLifetime", "Trail Length", 0.1, 5.0, true, 5, true
 Players.PlayerRemoving:Connect(function(player)
     if Highlights[player] then Highlights[player]:Destroy() Highlights[player] = nil end
     if Nimbs[player] then ClearNimbFromCharacter(player.Character) Nimbs[player] = nil end
-end)
-end)
-end)
 end)
