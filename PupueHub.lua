@@ -13,6 +13,7 @@ local COLOR_ACCENT = Color3.fromRGB(0, 170, 255)
 local COLOR_TEXT = Color3.fromRGB(240, 240, 240)
 local COLOR_TEXT_DARK = Color3.fromRGB(150, 150, 150)
 local COLOR_CLOSE = Color3.fromRGB(255, 75, 75)
+local COLOR_TEAM_PARTICLE = Color3.fromRGB(0, 255, 100)
 
 
 local OrigLighting = {
@@ -26,7 +27,7 @@ local OrigLighting = {
 
 
 local PupueGui = Instance.new("ScreenGui")
-PupueGui.Name = "PupueVisualsV3_Fixed"
+PupueGui.Name = "PupueVisualsV3_Final"
 PupueGui.ResetOnSpawn = false
 PupueGui.Parent = RunService:IsStudio() and LocalPlayer:WaitForChild("PlayerGui") or CoreGui
 
@@ -112,6 +113,8 @@ local Toggles = {
     FOV = false,
     WorldParticles = false,
     ParticleShape = false,
+    PTrails = false,          
+    PTrailsShape = false,     
     Trails = false,
     NimbEsp = false,
     NimbTarget = false, 
@@ -122,7 +125,13 @@ local Toggles = {
     PlayerEsp = false,
     EspMode = false,
     Fullbright = false,
-    WaypointsActive = false
+    WaypointsActive = false,
+    TeamParticle = false,       
+    TeamParticleShape = false,
+    InfiniteJump = false,     
+    NameTagEsp = false,       
+    NameTagMode = false,
+    Spinner = false           
 }
 
 
@@ -138,19 +147,32 @@ local Values = {
     P_Size = 0.35,
     P_Radius = 75,       
     NimbSize = 1.8,
-    TrailLifetime = 1.8
+    TrailLifetime = 1.8,
+    PTrailsSize = 0.4,        
+    PTrailsLifetime = 1.5,    
+    PTrailsTrans = 0.2,       
+    PTrailsRadius = 2,
+    TeamParticleSize = 0.8,    
+    TeamParticleHeight = 2.5,
+    SpinnerSpeed = 25         
 }
 
 
 local Highlights = {}
 local Nimbs = {}
 local Trails = {}
+local TeamParticles = {} 
+local NameTags = {}           
 local AllUIElements = {} 
 local ActiveWaypoints = {}
 local WaypointCounter = 0
+local TargetNickText = ""
+local TargetFlingText = ""
+local FriendCache = {}
 
 
 local FlyBodyGyro, FlyBodyVelocity
+local SpinnerInstance = nil   
 local MenuVisible = false
 
 
@@ -164,15 +186,11 @@ ToggleButton.Visible = true
 ToggleButton.Parent = PupueGui
 
 
-local ButtonCorner = Instance.new("UICorner")
+local ButtonCorner = Instance.new("UICorner", ToggleButton)
 ButtonCorner.CornerRadius = UDim.new(1, 0)
-ButtonCorner.Parent = ToggleButton
-
-
-local ButtonStroke = Instance.new("UIStroke")
+local ButtonStroke = Instance.new("UIStroke", ToggleButton)
 ButtonStroke.Color = COLOR_ACCENT
 ButtonStroke.Thickness = 1.5
-ButtonStroke.Parent = ToggleButton
 
 
 local dragToggle, dragStart, startPos
@@ -202,20 +220,14 @@ ToggleButton.InputBegan:Connect(function(input)
         islandStartPos = ToggleButton.Position
     end
 end)
-
-
 UserInputService.InputChanged:Connect(function(input)
     if islandDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - islandDragStart
         ToggleButton.Position = UDim2.new(islandStartPos.X.Scale, islandStartPos.X.Offset + delta.X, islandStartPos.Y.Scale, islandStartPos.Y.Offset + delta.Y)
     end
 end)
-
-
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        islandDragging = false
-    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then islandDragging = false end
 end)
 
 
@@ -305,18 +317,275 @@ local function ClearAllWaypoints()
 end
 
 
+local function TeleportToPlayerByName()
+    if TargetNickText == "" then return end
+    local searchStr = TargetNickText:lower()
+    local targetPlayer = nil
+    
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Name:lower():find(searchStr) then
+            targetPlayer = p
+            break
+        end
+    end
+    
+    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local myChar = LocalPlayer.Character
+        local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if myHrp then
+            myHrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 2, 3)
+        end
+    end
+end
+
+
+local function FlingPlayerByName()
+    if TargetFlingText == "" then return end
+    local searchStr = TargetFlingText:lower()
+    local targetPlayer = nil
+    
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Name:lower():find(searchStr) then
+            targetPlayer = p
+            break
+        end
+    end
+    
+    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local myChar = LocalPlayer.Character
+        local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+        
+        if myHrp and myHum then
+            local origCFrame = myHrp.CFrame
+            
+            local bV = Instance.new("BodyVelocity")
+            bV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+            bV.Velocity = Vector3.new(0, 0, 0)
+            bV.Parent = myHrp
+            
+            local bAV = Instance.new("BodyAngularVelocity")
+            bAV.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+            bAV.AngularVelocity = Vector3.new(0, 99999, 0)
+            bAV.Parent = myHrp
+            
+            myHum.PlatformStand = true
+            
+            for i = 1, 45 do
+                if not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then break end
+                myHrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(math.random(-1,1), 0, math.random(-1,1))
+                task.wait(0.02)
+            end
+            
+            bV:Destroy()
+            bAV:Destroy()
+            myHum.PlatformStand = false
+            myHrp.CFrame = origCFrame
+        end
+    end
+end
+
+
+local function CheckIfFriend(player)
+    if player == LocalPlayer then return true end
+    if FriendCache[player.UserId] ~= nil then
+        return FriendCache[player.UserId]
+    end
+    
+    local success, isFriend = pcall(function()
+        return LocalPlayer:IsFriendsWith(player.UserId)
+    end)
+    
+    if success then
+        FriendCache[player.UserId] = isFriend
+        return isFriend
+    end
+    return false
+end
+
+
+local function UpdateTeamParticle(player)
+    local char = player.Character
+    if not char or not char:FindFirstChild("Head") then return end
+
+
+    local currentPart = TeamParticles[player]
+    
+    if not Toggles.TeamParticle then
+        if currentPart then
+            currentPart:Destroy()
+            TeamParticles[player] = nil
+        end
+        return
+    end
+
+
+    if not currentPart or currentPart.Parent ~= char then
+        if currentPart then currentPart:Destroy() end
+        
+        currentPart = Instance.new("Part")
+        currentPart.Name = "PupueTeamParticle"
+        currentPart.Material = Enum.Material.Neon
+        currentPart.Color = COLOR_TEAM_PARTICLE
+        currentPart.CanCollide = false
+        currentPart.Massless = true
+        
+        local weld = Instance.new("Weld")
+        weld.Name = "ParticleWeld"
+        weld.Part0 = char.Head
+        weld.Part1 = currentPart
+        weld.Parent = currentPart
+        
+        currentPart.Parent = char
+        TeamParticles[player] = currentPart
+    end
+
+
+    currentPart.Shape = Toggles.TeamParticleShape and Enum.PartType.Ball or Enum.PartType.Block
+    local s = Values.TeamParticleSize
+    currentPart.Size = Vector3.new(s, s, s)
+    
+    local weld = currentPart:FindFirstChild("ParticleWeld")
+    if weld then
+        weld.C0 = CFrame.new(0, Values.TeamParticleHeight, 0)
+    end
+end
+
+
+local function UpdateNameTag(player)
+    if player == LocalPlayer or not Toggles.NameTagEsp then
+        if NameTags[player] then
+            NameTags[player]:Destroy()
+            NameTags[player] = nil
+        end
+        return
+    end
+
+
+    local char = player.Character
+    local head = char and char:FindFirstChild("Head")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+
+    if head and hum then
+        local tag = NameTags[player]
+        if not tag or tag.Parent ~= head then
+            if tag then tag:Destroy() end
+            
+            tag = Instance.new("BillboardGui")
+            tag.Name = "PupueNameTag"
+            tag.Size = UDim2.new(0, 200, 0, 24)
+            tag.AlwaysOnTop = true
+            tag.ExtentsOffset = Vector3.new(0, 2.5, 0)
+            
+            local bgFrame = Instance.new("Frame", tag)
+            bgFrame.Name = "BGFrame"
+            bgFrame.Size = UDim2.new(0, 0, 1, 0)
+            bgFrame.Position = UDim2.new(0.5, 0, 0, 0)
+            bgFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            bgFrame.BackgroundTransparency = 0.45
+            bgFrame.BorderSizePixel = 0
+            Instance.new("UICorner", bgFrame).CornerRadius = UDim.new(0, 6)
+            
+            local tl = Instance.new("TextLabel", bgFrame)
+            tl.Name = "Label"
+            tl.Size = UDim2.new(1, 0, 1, 0)
+            tl.BackgroundTransparency = 1
+            tl.Font = Enum.Font.GothamBold
+            tl.TextSize = 11
+            tl.TextColor3 = Color3.fromRGB(255, 255, 255)
+            tl.TextStrokeTransparency = 1
+            
+            tag.Parent = head
+            NameTags[player] = tag
+        end
+        
+        local currentHp = math.floor(hum.Health)
+        local maxHp = math.floor(hum.MaxHealth)
+        local bgFrame = tag:FindFirstChild("BGFrame")
+        local label = bgFrame and bgFrame:FindFirstChild("Label")
+        
+        if label and bgFrame then
+            local textStr = player.Name .. " [" .. currentHp .. "/" .. maxHp .. "]"
+            label.Text = textStr
+            
+            local textBounds = label.TextBounds
+            bgFrame.Size = UDim2.new(0, textBounds.X + 16, 1, 0)
+            bgFrame.Position = UDim2.new(0.5, -(textBounds.X + 16)/2, 0, 0)
+            
+            if Toggles.NameTagMode then
+                label.TextColor3 = Color3.fromRGB(255, 255, 255)
+            else
+                local hpPercent = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                label.TextColor3 = Color3.fromHSV(hpPercent * 0.33, 1, 1) 
+            end
+        end
+    else
+        if NameTags[player] then
+            NameTags[player]:Destroy()
+            NameTags[player] = nil
+        end
+    end
+end
+
+
+UserInputService.JumpRequest:Connect(function()
+    if Toggles.InfiniteJump then
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+
 RunService.Heartbeat:Connect(function()
     local char = LocalPlayer.Character
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
-            if Toggles.SpeedHack then table.insert({}, hum) hum.WalkSpeed = Values.SpeedHack end
+            if Toggles.SpeedHack then hum.WalkSpeed = Values.SpeedHack end
             if Toggles.JumpPower then hum.UseJumpPower = true hum.JumpPower = Values.JumpPower end
         end
         if Toggles.Noclip then
             for _, part in pairs(char:GetDescendants()) do
                 if part:IsA("BasePart") and part.CanCollide then part.CanCollide = false end
             end
+        end
+        
+        if Toggles.PTrails and char:FindFirstChild("HumanoidRootPart") and hum and hum.MoveDirection.Magnitude > 0 then
+            local hrp = char.HumanoidRootPart
+            local p = Instance.new("Part")
+            local pSize = Values.PTrailsSize
+            p.Size = Vector3.new(pSize, pSize, pSize)
+            p.Transparency = Values.PTrailsTrans
+            p.Color = COLOR_ACCENT
+            p.Material = Enum.Material.Neon
+            p.CanCollide = false
+            p.Anchored = true
+            p.Shape = Toggles.PTrailsShape and Enum.PartType.Ball or Enum.PartType.Block
+            
+            local rad = Values.PTrailsRadius
+            local offset = Vector3.new(
+                math.random(-rad, rad) / 10,
+                math.random(-rad, rad) / 10,
+                math.random(-rad, rad) / 10
+            )
+            p.Position = hrp.Position - Vector3.new(0, 1.2, 0) + offset
+            p.Parent = Workspace
+            
+            task.spawn(function()
+                local lifetime = Values.PTrailsLifetime
+                local startTrans = p.Transparency
+                local steps = 12
+                for i = 1, steps do
+                    task.wait(lifetime / steps)
+                    if not p or not p.Parent then break end
+                    p.Transparency = startTrans + (1 - startTrans) * (i / steps)
+                end
+                if p and p.Parent then p:Destroy() end
+            end)
         end
     end
 end)
@@ -485,7 +754,21 @@ end
 
 
 task.spawn(function()
-    while task.wait(0.2) do
+    while task.wait(0.1) do
+        for _, p in pairs(Players:GetPlayers()) do
+            local isFriend = CheckIfFriend(p)
+            
+            if Toggles.TeamParticle and isFriend then
+                UpdateTeamParticle(p)
+            else
+                if TeamParticles[p] then TeamParticles[p]:Destroy() TeamParticles[p] = nil end
+            end
+
+
+            UpdateNameTag(p)
+        end
+
+
         if Toggles.NimbEsp then
             for _, p in pairs(Players:GetPlayers()) do
                 local shouldHaveNimb = Toggles.NimbTarget and true or (p == LocalPlayer)
@@ -541,19 +824,11 @@ function UpdateFeatures(feature)
 
     if feature == "Fullbright" then
         if Toggles.Fullbright then
-            Lighting.Brightness = 2
-            Lighting.ClockTime = 14
-            Lighting.FogEnd = 100000
-            Lighting.GlobalShadows = false
-            Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-            Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+            Lighting.Brightness = 2; Lighting.ClockTime = 14; Lighting.FogEnd = 100000; Lighting.GlobalShadows = false
+            Lighting.Ambient = Color3.fromRGB(255, 255, 255); Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
         else
-            Lighting.Brightness = OrigLighting.Brightness
-            Lighting.ClockTime = OrigLighting.ClockTime
-            Lighting.FogEnd = OrigLighting.FogEnd
-            Lighting.GlobalShadows = OrigLighting.GlobalShadows
-            Lighting.Ambient = OrigLighting.Ambient
-            Lighting.OutdoorAmbient = OrigLighting.OutdoorAmbient
+            Lighting.Brightness = OrigLighting.Brightness; Lighting.ClockTime = OrigLighting.ClockTime; Lighting.FogEnd = OrigLighting.FogEnd
+            Lighting.GlobalShadows = OrigLighting.GlobalShadows; Lighting.Ambient = OrigLighting.Ambient; Lighting.OutdoorAmbient = OrigLighting.OutdoorAmbient
         end
     end
 
@@ -563,20 +838,32 @@ function UpdateFeatures(feature)
         if not hrp then return end
         if Toggles.Fly then
             FlyBodyGyro = Instance.new("BodyGyro")
-            FlyBodyGyro.P = 9e4
-            FlyBodyGyro.maxTorque = Vector3.new(9e5, 9e5, 9e5)
-            FlyBodyGyro.CFrame = hrp.CFrame
-            FlyBodyGyro.Parent = hrp
+            FlyBodyGyro.P = 9e4; FlyBodyGyro.maxTorque = Vector3.new(9e5, 9e5, 9e5); FlyBodyGyro.CFrame = hrp.CFrame; FlyBodyGyro.Parent = hrp
             
             FlyBodyVelocity = Instance.new("BodyVelocity")
-            FlyBodyVelocity.velocity = Vector3.new(0, 0.1, 0)
-            FlyBodyVelocity.maxForce = Vector3.new(9e5, 9e5, 9e5)
-            FlyBodyVelocity.Parent = hrp
+            FlyBodyVelocity.velocity = Vector3.new(0, 0.1, 0); FlyBodyVelocity.maxForce = Vector3.new(9e5, 9e5, 9e5); FlyBodyVelocity.Parent = hrp
             hum.PlatformStand = true
         else
             if FlyBodyGyro then FlyBodyGyro:Destroy() FlyBodyGyro = nil end
             if FlyBodyVelocity then FlyBodyVelocity:Destroy() FlyBodyVelocity = nil end
             hum.PlatformStand = false
+        end
+    end
+
+
+    if feature == "Spinner" or feature == "SpinnerSpeed" then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        if Toggles.Spinner then
+            if not SpinnerInstance then
+                SpinnerInstance = Instance.new("BodyAngularVelocity")
+                SpinnerInstance.Name = "PupueSpinner"
+                SpinnerInstance.MaxTorque = Vector3.new(0, 9e9, 0)
+                SpinnerInstance.Parent = hrp
+            end
+            SpinnerInstance.AngularVelocity = Vector3.new(0, Values.SpinnerSpeed, 0)
+        else
+            if SpinnerInstance then SpinnerInstance:Destroy() SpinnerInstance = nil end
         end
     end
 
@@ -588,21 +875,14 @@ function UpdateFeatures(feature)
                 Trails[LocalPlayer][1].Lifetime = Values.TrailLifetime
             else
                 local trail = Instance.new("Trail")
-                local a0 = Instance.new("Attachment", hrp)
-                local a1 = Instance.new("Attachment", hrp)
-                a0.Position = Vector3.new(0, 0.8, 0)
-                a1.Position = Vector3.new(0, -0.8, 0)
+                local a0 = Instance.new("Attachment", hrp); local a1 = Instance.new("Attachment", hrp)
+                a0.Position = Vector3.new(0, 0.8, 0); a1.Position = Vector3.new(0, -0.8, 0)
                 trail.Attachment0 = a0; trail.Attachment1 = a1
-                trail.Color = ColorSequence.new(COLOR_ACCENT)
-                trail.Lifetime = Values.TrailLifetime 
-                trail.Parent = hrp
+                trail.Color = ColorSequence.new(COLOR_ACCENT); trail.Lifetime = Values.TrailLifetime; trail.Parent = hrp
                 Trails[LocalPlayer] = {trail, a0, a1}
             end
         else
-            if Trails[LocalPlayer] then
-                for _, v in pairs(Trails[LocalPlayer]) do v:Destroy() end
-                Trails[LocalPlayer] = nil
-            end
+            if Trails[LocalPlayer] then for _, v in pairs(Trails[LocalPlayer]) do v:Destroy() end Trails[LocalPlayer] = nil end
         end
     end
     
@@ -615,10 +895,8 @@ end
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     task.wait(1)
     if Toggles.Fly then Toggles.Fly = false UpdateFeatures("Fly") end
-    if Toggles.Trails then
-        Trails[LocalPlayer] = nil 
-        UpdateFeatures("Trails") 
-    end
+    if Toggles.Trails then Trails[LocalPlayer] = nil UpdateFeatures("Trails") end
+    if Toggles.Spinner then SpinnerInstance = nil UpdateFeatures("Spinner") end
 end)
 
 
@@ -704,9 +982,7 @@ local function CreateButton(parentColumn, name, text, layout, altOnText, altOffT
     Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 4)
 
 
-    local ClickBtn = Instance.new("TextButton", Frame)
-    ClickBtn.Size = UDim2.new(1, 0, 1, 0); ClickBtn.BackgroundTransparency = 1; ClickBtn.Text = ""
-    ClickBtn.MouseButton1Click:Connect(function()
+    ToggleBtn.MouseButton1Click:Connect(function()
         Toggles[name] = not Toggles[name]
         ToggleBtn.Text = Toggles[name] and (altOnText or "ON") or (altOffText or "OFF")
         ToggleBtn.BackgroundColor3 = Toggles[name] and COLOR_ACCENT or Color3.fromRGB(45, 45, 55)
@@ -727,13 +1003,9 @@ local function CreateActionClickable(parentColumn, text, layout, clickCallback)
     Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
 
 
-    local Label = Instance.new("TextLabel", Frame)
-    Label.Size = UDim2.new(1, -16, 1, 0); Label.Position = UDim2.new(0, 8, 0, 0); Label.BackgroundTransparency = 1
-    Label.Text = text; Label.TextColor3 = COLOR_ACCENT; Label.Font = Enum.Font.GothamBold; Label.TextSize = 10.5; Label.TextXAlignment = Enum.TextXAlignment.Center
-
-
     local ClickBtn = Instance.new("TextButton", Frame)
-    ClickBtn.Size = UDim2.new(1, 0, 1, 0); ClickBtn.BackgroundTransparency = 1; ClickBtn.Text = ""
+    ClickBtn.Size = UDim2.new(1, 0, 1, 0); ClickBtn.BackgroundTransparency = 1; ClickBtn.Text = text
+    ClickBtn.TextColor3 = COLOR_ACCENT; ClickBtn.Font = Enum.Font.GothamBold; ClickBtn.TextSize = 10.5; ClickBtn.TextXAlignment = Enum.TextXAlignment.Center
     ClickBtn.MouseButton1Click:Connect(clickCallback)
     
     table.insert(AllUIElements, {Text = text, Frame = Frame})
@@ -769,6 +1041,7 @@ local function CreateSlider(parentColumn, name, text, min, max, isFloat, layout,
     end
 
 
+    -- Фикс бага: привязываем к Frame (а не к несуществующему Track)
     local Track = Instance.new("Frame", Frame)
     Track.Size = UDim2.new(0.9, 0, 0, 4); Track.Position = UDim2.new(0.05, 0, 0, 28); Track.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
     Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
@@ -785,8 +1058,11 @@ local function CreateSlider(parentColumn, name, text, min, max, isFloat, layout,
 
     local ActiveInput = false
     local function UpdateSlider()
-        if not Track or not Track.Parent then return end
-        local percentage = math.clamp((UserInputService:GetMouseLocation().X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+        if not Track then return end
+        local trackWidth = Track.AbsoluteSize.X
+        if trackWidth <= 0 then trackWidth = 160 end
+        
+        local percentage = math.clamp((UserInputService:GetMouseLocation().X - Track.AbsolutePosition.X) / trackWidth, 0, 1)
         Fill.Size = UDim2.new(percentage, 0, 1, 0)
         local rawValue = min + (max - min) * percentage
         local finalValue = isFloat and math.floor(rawValue * 100) / 100 or math.floor(rawValue)
@@ -804,44 +1080,242 @@ local function CreateSlider(parentColumn, name, text, min, max, isFloat, layout,
 end
 
 
+local function CreateCombinedToggleSlider(parentColumn, toggleName, sliderName, text, min, max, layout, isFloat)
+    local Frame = Instance.new("Frame", parentColumn)
+    Frame.Size = UDim2.new(0.92, 0, 0, 50) 
+    Frame.BackgroundColor3 = COLOR_FRAME
+    Frame.LayoutOrder = layout
+    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+
+
+    local Label = Instance.new("TextLabel", Frame)
+    Label.Size = UDim2.new(1, -55, 0, 22)
+    Label.Position = UDim2.new(0, 8, 0, 2)
+    Label.BackgroundTransparency = 1
+    Label.Text = text .. ": " .. tostring(Values[sliderName])
+    Label.TextColor3 = COLOR_TEXT_DARK
+    Label.Font = Enum.Font.GothamMedium
+    Label.TextSize = 10
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+
+
+    local ToggleBtn = Instance.new("TextButton", Frame)
+    ToggleBtn.Size = UDim2.new(0, 40, 0, 15)
+    ToggleBtn.Position = UDim2.new(1, -48, 0, 5)
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+    ToggleBtn.Text = "OFF"
+    ToggleBtn.TextColor3 = COLOR_TEXT_DARK
+    ToggleBtn.Font = Enum.Font.GothamBold
+    ToggleBtn.TextSize = 8
+    Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 4)
+
+
+    ToggleBtn.MouseButton1Click:Connect(function()
+        Toggles[toggleName] = not Toggles[toggleName]
+        ToggleBtn.Text = Toggles[toggleName] and "ON" or "OFF"
+        ToggleBtn.BackgroundColor3 = Toggles[toggleName] and COLOR_ACCENT or Color3.fromRGB(45, 45, 55)
+        ToggleBtn.TextColor3 = Toggles[toggleName] and Color3.fromRGB(20,20,20) or COLOR_TEXT_DARK
+        Label.TextColor3 = Toggles[toggleName] and COLOR_TEXT or COLOR_TEXT_DARK
+        UpdateFeatures(toggleName)
+    end)
+
+
+    local Track = Instance.new("Frame", Frame)
+    Track.Size = UDim2.new(0.9, 0, 0, 4)
+    Track.Position = UDim2.new(0.05, 0, 0, 34)
+    Track.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+    Instance.new("UICorner", Track).CornerRadius = UDim.new(1, 0)
+
+
+    local Fill = Instance.new("Frame", Track)
+    Fill.Size = UDim2.new((Values[sliderName] - min) / (max - min), 0, 1, 0)
+    Fill.BackgroundColor3 = COLOR_ACCENT
+    Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
+
+
+    local DragBtn = Instance.new("TextButton", Track)
+    DragBtn.Size = UDim2.new(1, 0, 1, 0)
+    DragBtn.BackgroundTransparency = 1
+    DragBtn.Text = ""
+
+
+    local ActiveInput = false
+    local function UpdateSlider()
+        if not Track then return end
+        local trackWidth = Track.AbsoluteSize.X
+        if trackWidth <= 0 then trackWidth = 160 end
+        
+        local percentage = math.clamp((UserInputService:GetMouseLocation().X - Track.AbsolutePosition.X) / trackWidth, 0, 1)
+        Fill.Size = UDim2.new(percentage, 0, 1, 0)
+        local rawValue = min + (max - min) * percentage
+        Values[sliderName] = isFloat and (math.floor(rawValue * 10) / 10) or math.floor(rawValue)
+        Label.Text = text .. ": " .. tostring(Values[sliderName])
+        UpdateFeatures(toggleName)
+    end
+
+
+    DragBtn.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then ActiveInput = true UpdateSlider() end end)
+    UserInputService.InputChanged:Connect(function(input) if ActiveInput and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then UpdateSlider() end end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then ActiveInput = false end end)
+
+
+    table.insert(AllUIElements, {Text = text, Frame = Frame})
+end
+
+
+local function CreatePlayerTeleporter(parentColumn, layout)
+    local Frame = Instance.new("Frame", parentColumn)
+    Frame.Size = UDim2.new(0.92, 0, 0, 36)
+    Frame.BackgroundColor3 = COLOR_FRAME
+    Frame.LayoutOrder = layout
+    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+
+
+    local TxtBox = Instance.new("TextBox", Frame)
+    TxtBox.Size = UDim2.new(0.6, -10, 1, -10)
+    TxtBox.Position = UDim2.new(0, 6, 0.5, -13)
+    TxtBox.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+    TxtBox.Text = ""
+    TxtBox.PlaceholderText = "Ник игрока..."
+    TxtBox.PlaceholderColor3 = COLOR_TEXT_DARK
+    TxtBox.TextColor3 = COLOR_TEXT
+    TxtBox.Font = Enum.Font.GothamMedium
+    TxtBox.TextSize = 9.5
+    Instance.new("UICorner", TxtBox).CornerRadius = UDim.new(0, 5)
+    
+    TxtBox:GetPropertyChangedSignal("Text"):Connect(function()
+        TargetNickText = TxtBox.Text
+    end)
+
+
+    local TpBtn = Instance.new("TextButton", Frame)
+    TpBtn.Size = UDim2.new(0.4, -6, 1, -10)
+    TpBtn.Position = UDim2.new(0.6, 2, 0.5, -13)
+    TpBtn.BackgroundColor3 = COLOR_ACCENT
+    TpBtn.Text = "Teleport"
+    TpBtn.TextColor3 = Color3.fromRGB(20, 20, 20)
+    TpBtn.Font = Enum.Font.GothamBold
+    TpBtn.TextSize = 10
+    Instance.new("UICorner", TpBtn).CornerRadius = UDim.new(0, 5)
+
+
+    TpBtn.MouseButton1Click:Connect(TeleportToPlayerByName)
+    
+    table.insert(AllUIElements, {Text = "Teleport Player Nickname Tp", Frame = Frame})
+end
+
+
+local function CreatePlayerFlinger(parentColumn, layout)
+    local Frame = Instance.new("Frame", parentColumn)
+    Frame.Size = UDim2.new(0.92, 0, 0, 36)
+    Frame.BackgroundColor3 = COLOR_FRAME
+    Frame.LayoutOrder = layout
+    Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+
+
+    local TxtBox = Instance.new("TextBox", Frame)
+    TxtBox.Size = UDim2.new(0.6, -10, 1, -10)
+    TxtBox.Position = UDim2.new(0, 6, 0.5, -13)
+    TxtBox.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
+    TxtBox.Text = ""
+    TxtBox.PlaceholderText = "Ник для Fling..."
+    TxtBox.PlaceholderColor3 = COLOR_TEXT_DARK
+    TxtBox.TextColor3 = COLOR_TEXT
+    TxtBox.Font = Enum.Font.GothamMedium
+    TxtBox.TextSize = 9.5
+    Instance.new("UICorner", TxtBox).CornerRadius = UDim.new(0, 5)
+    
+    TxtBox:GetPropertyChangedSignal("Text"):Connect(function()
+        TargetFlingText = TxtBox.Text
+    end)
+
+
+    local FlBtn = Instance.new("TextButton", Frame)
+    FlBtn.Size = UDim2.new(0.4, -6, 1, -10)
+    FlBtn.Position = UDim2.new(0.6, 2, 0.5, -13)
+    FlBtn.BackgroundColor3 = Color3.fromRGB(255, 65, 65) 
+    FlBtn.Text = "Fling"
+    FlBtn.TextColor3 = COLOR_TEXT
+    FlBtn.Font = Enum.Font.GothamBold
+    FlBtn.TextSize = 10
+    Instance.new("UICorner", FlBtn).CornerRadius = UDim.new(0, 5)
+
+
+    FlBtn.MouseButton1Click:Connect(FlingPlayerByName)
+    
+    table.insert(AllUIElements, {Text = "Fling Player Kill Toxic Nickname", Frame = Frame})
+end
+
+
 local VisualCol = CreateColumn("Visuals", 1)
 local MovementCol = CreateColumn("Movement", 2)
 local PlayerCol = CreateColumn("Player", 3)
 
 
+-- КОЛОНКА VISUALS
 CreateSlider(VisualCol, "AspectRatio", "Aspect Ratio", 0.2, 1.5, true, 1)
 CreateSlider(VisualCol, "FOV", "Field of View", 30, 120, false, 2)
-CreateButton(VisualCol, "WorldParticles", "World Particles", 3)
-CreateButton(VisualCol, "ParticleShape", "Particle Shape", 4, "SPHERE", "CUBE")
-CreateSlider(VisualCol, "P_Rate", "Particles Rate", 0.01, 0.3, true, 5, true)
-CreateSlider(VisualCol, "P_Lifetime", "Particles Lifetime", 0.2, 10.0, true, 6, true)
-CreateSlider(VisualCol, "P_Size", "Particles Size", 0.1, 1.5, true, 7, true)
-CreateSlider(VisualCol, "P_Radius", "Particles Radius", 10, 250, false, 8, true) 
-CreateButton(VisualCol, "NimbEsp", "Donut Halo ESP", 9)
-CreateButton(VisualCol, "NimbTarget", "Halo Target", 10, "ALL", "ONLY ME") 
-CreateSlider(VisualCol, "NimbSize", "Halo Size", 0.5, 5.0, true, 11, true) 
-CreateButton(VisualCol, "Fullbright", "Fullbright Mode", 12)
-CreateButton(VisualCol, "WaypointsActive", "Show Waypoints", 13)
-CreateActionClickable(VisualCol, "Add Waypoint", 14, AddWaypointAtCurrentPosition)
-CreateActionClickable(VisualCol, "TP to Last Waypoint", 15, TeleportToLastWaypoint) 
-CreateActionClickable(VisualCol, "Clear Waypoints", 16, ClearAllWaypoints)
 
 
-CreateSlider(MovementCol, "SpeedHack", "Speed Hack", 16, 150, false, 1)
-CreateSlider(MovementCol, "JumpPower", "Jump Power", 50, 120, false, 2)
-CreateButton(MovementCol, "Fly", "Fly Mode (Mobile)", 3)
-CreateSlider(MovementCol, "FlySpeed", "Fly Speed", 10, 200, false, 4, true) 
-CreateButton(MovementCol, "Noclip", "Noclip Mode", 5)
+CreateButton(VisualCol, "TeamParticle", "Team Particle", 3)
+CreateButton(VisualCol, "TeamParticleShape", "Team Part. Shape", 4, "SPHERE", "CUBE")
+CreateSlider(VisualCol, "TeamParticleSize", "Team Part. Size", 0.1, 4.0, true, 5, true)
+CreateSlider(VisualCol, "TeamParticleHeight", "Team Part. Height", 1.0, 7.0, true, 6, true)
 
 
+CreateButton(VisualCol, "WorldParticles", "World Particles", 7)
+CreateButton(VisualCol, "ParticleShape", "Particle Shape", 8, "SPHERE", "CUBE")
+CreateSlider(VisualCol, "P_Rate", "Particles Rate", 0.01, 0.3, true, 9, true)
+CreateSlider(VisualCol, "P_Lifetime", "Particles Lifetime", 0.2, 10.0, true, 10, true)
+CreateSlider(VisualCol, "P_Size", "Particles Size", 0.1, 1.5, true, 11, true)
+CreateSlider(VisualCol, "P_Radius", "Particles Radius", 10, 250, false, 12, true) 
+
+
+CreateButton(VisualCol, "PTrails", "Particle Trails", 13)
+CreateButton(VisualCol, "PTrailsShape", "Particle Trails Shape", 14, "SPHERE", "CUBE")
+CreateSlider(VisualCol, "PTrailsRadius", "Particle Trails Radius", 0, 25, false, 15, true)
+CreateSlider(VisualCol, "PTrailsLifetime", "Particle Trails Lifetime", 0.2, 5.0, true, 16, true)
+CreateSlider(VisualCol, "PTrailsSize", "Particle Trails Size", 0.1, 2.0, true, 17, true)
+CreateSlider(VisualCol, "PTrailsTrans", "Particle Trails Transparency", 0.0, 0.9, true, 18, true)
+
+
+CreateButton(VisualCol, "NimbEsp", "Donut Halo ESP", 19)
+CreateButton(VisualCol, "NimbTarget", "Halo Target", 20, "ALL", "ONLY ME") 
+CreateSlider(VisualCol, "NimbSize", "Halo Size", 0.5, 5.0, true, 21, true) 
+CreateButton(VisualCol, "Fullbright", "Fullbright Mode", 22)
+
+
+CreateButton(VisualCol, "WaypointsActive", "Show Waypoints", 23)
+CreateActionClickable(VisualCol, "Add Waypoint", 24, AddWaypointAtCurrentPosition)
+CreateActionClickable(VisualCol, "TP to Last Waypoint", 25, TeleportToLastWaypoint) 
+CreateActionClickable(VisualCol, "Clear Waypoints", 26, ClearAllWaypoints)
+
+
+-- КОЛОНКА MOVEMENT
+CreateCombinedToggleSlider(MovementCol, "SpeedHack", "SpeedHack", "Speed Hack", 16, 150, 1, false)
+CreateCombinedToggleSlider(MovementCol, "JumpPower", "JumpPower", "Jump Power", 50, 120, 2, false)
+CreateCombinedToggleSlider(MovementCol, "Fly", "FlySpeed", "Fly Mode (Mobile)", 10, 200, 3, false) 
+CreateButton(MovementCol, "Noclip", "Noclip Mode", 4)
+CreateButton(MovementCol, "InfiniteJump", "Infinite Jump", 5)
+
+
+-- КОЛОНКА PLAYER
 CreateButton(PlayerCol, "PlayerEsp", "Highlight ESP", 1)
 CreateButton(PlayerCol, "EspMode", "ESP Mode", 2, "OUTLINE", "FULL") 
 CreateSlider(PlayerCol, "EspTrans", "ESP Transparency", 0, 1, true, 3, true) 
-CreateButton(PlayerCol, "Trails", "Player Trails", 4)
-CreateSlider(PlayerCol, "TrailLifetime", "Trail Length", 0.1, 5.0, true, 5, true)
+CreateCombinedToggleSlider(PlayerCol, "Trails", "TrailLifetime", "Player Trails", 0.1, 5.0, 4, true) 
+CreateButton(PlayerCol, "NameTagEsp", "NameTag ESP (Nick/HP)", 5)
+CreateButton(PlayerCol, "NameTagMode", "NameTag Mode", 6, "WHITE", "HP-COLOR")
+CreateCombinedToggleSlider(PlayerCol, "Spinner", "SpinnerSpeed", "Player Spinner", 0, 60, 7, false)
+
+
+CreatePlayerTeleporter(PlayerCol, 8) 
+CreatePlayerFlinger(PlayerCol, 9) 
 
 
 Players.PlayerRemoving:Connect(function(player)
     if Highlights[player] then Highlights[player]:Destroy() Highlights[player] = nil end
     if Nimbs[player] then ClearNimbFromCharacter(player.Character) Nimbs[player] = nil end
+    if TeamParticles[player] then TeamParticles[player]:Destroy() TeamParticles[player] = nil end
+    if NameTags[player] then NameTags[player]:Destroy() NameTags[player] = nil end
 end)
