@@ -1,6 +1,3 @@
--- Pupue Optimizer Core v1.0
--- High-Performance Roblox FPS Booster & Memory Optimizer
-
 local DefaultConfig = {
     OPTIZ = true,
     OPTIMIZATION_INTERVAL = 10,
@@ -60,15 +57,11 @@ local function Main(ExternalConfig)
 
     local function safeCall(func, name, ...)
         local success, err = pcall(func, ...)
-        if not success then
-            warn(string.format("[Zenith Error] %s: %s", name, err))
-        end
         return success
     end
 
     local Running = true
 
-    -- 1. Сглаживание материалов
     local function setSmoothPlastic()
         if not Config.SMOOTH_PLASTIC_ENABLED then return end
         local function handleInstance(instance)
@@ -88,12 +81,11 @@ local function Main(ExternalConfig)
         workspace.DescendantAdded:Connect(handleInstance)
     end
 
-    -- 2. Фирменный Update Log интерфейс (Zenith UI)
     local function CreateUpdateLog()
         if not Config.SHOW_UPDATELOG then return end
         
         local screenGui = Instance.new("ScreenGui")
-        screenGui.Name = "ZenithOptimizerUI"
+        screenGui.Name = "SystemLogUI"
         screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
         screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -111,7 +103,6 @@ local function Main(ExternalConfig)
         frame.BorderSizePixel = 2
         frame.Parent = screenGui
 
-        -- Скругление углов для современного вида
         local uiCorner = Instance.new("UICorner")
         uiCorner.CornerRadius = UDim.new(0, 8)
         uiCorner.Parent = frame
@@ -119,7 +110,6 @@ local function Main(ExternalConfig)
         local dragHeader = Instance.new("Frame")
         dragHeader.Size = UDim2.new(1, 0, 0, isMobile and 30 or 25)
         dragHeader.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-        dragHeader.BorderColor3 = Color3.fromRGB(60, 60, 60)
         dragHeader.BorderSizePixel = 0
         dragHeader.Parent = frame
 
@@ -131,8 +121,8 @@ local function Main(ExternalConfig)
         headerTitle.Size = UDim2.new(1, -80, 1, 0)
         headerTitle.Position = UDim2.new(0, 10, 0, 0)
         headerTitle.BackgroundTransparency = 1
-        headerTitle.Text = "// ZENITH_OPTIMIZER v1.0"
-        headerTitle.TextColor3 = Color3.fromRGB(0, 255, 150) -- Красивый неоновый мятный цвет
+        headerTitle.Text = "LOG"
+        headerTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
         headerTitle.TextSize = textSize
         headerTitle.Font = Enum.Font.Code
         headerTitle.TextXAlignment = Enum.TextXAlignment.Left
@@ -201,12 +191,7 @@ local function Main(ExternalConfig)
         contentLabel.LayoutOrder = 1
         contentLabel.Parent = scrollFrame
 
-        -- Текст конфигурации для копирования (уже очищенный от старого автора)
-        local configText = [[
--- Zenith Optimizer Configuration v1.0
--- Replace your current config with this one to customize settings!
-
-local Config = {
+        local configText = [[local Config = {
     NETWORK_OPTIMIZATION = true,
     REDUCE_REPLICATION = true,
     THROTTLE_REMOTE_EVENTS = true,
@@ -244,8 +229,7 @@ local Config = {
     QUALITY_LEVEL = 1,
     FPS_CAP = 1000,
     MEMORY_CLEANUP_THRESHOLD = 500,
-}
-]]
+}]]
         contentLabel.Text = configText
 
         local function updateCanvasSize()
@@ -270,7 +254,6 @@ local Config = {
             end
         end)
 
-        -- Драггер (перетаскивание окна)
         local dragging, dragInput, dragStart, startPos
         dragHeader.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -300,15 +283,9 @@ local Config = {
             screenGui:Destroy()
         end)
 
-        StarterGui:SetCore("SendNotification", {
-            Title = "Zenith Optimizer",
-            Text = "Settings loaded successfully!",
-            Duration = 5;
-        })
         return screenGui
     end
 
-    -- 3. Остальной оригинальный функционал оптимизатора (сетевая часть, физика, лимиты)
     local function applyFullBright()
         if not Config.FULL_BRIGHT_ENABLED then return end
         Lighting.Brightness = 2
@@ -344,10 +321,8 @@ local Config = {
 
     local function throttleRemoteEvents()
         if not Config.THROTTLE_REMOTE_EVENTS then return end
-        -- Базовый троттлинг RemoteEvent/RemoteFunction для оптимизации обмена пакетами
         for _, obj in ipairs(game:GetDescendants()) do
             if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                -- Логика перехвата вызовов
             end
         end
     end
@@ -362,11 +337,9 @@ local Config = {
         safeCall(throttleRemoteEvents, "RemoteEvents")
     end
 
-    -- Запуск
     CreateUpdateLog()
     applyAllOptimizations()
 
-    -- Луп оптимизации
     task.spawn(function()
         while Running do
             safeCall(applyAllOptimizations, "LoopOptimizations")
